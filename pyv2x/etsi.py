@@ -1,7 +1,7 @@
 from scapy.packet import Packet, Raw
 from scapy.layers.l2 import SNAP
 
-from v2t_utils import GeoNetworking, BTPb
+from pyv2x.v2x_utils import GeoNetworking, BTPb
 
 import os
 import asn1tools
@@ -59,6 +59,6 @@ class ETSI(object):
     def new_cam(cls, cam: asn1tools.compiler.Specification, **kwargs) -> Packet:
         
         geo, btpb = cls.geo(**kwargs), BTPb(destination_port=2001, info=0x5400)
-
+        
 
         return cls.geo(**kwargs)
