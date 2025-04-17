@@ -1,0 +1,15 @@
+ItsPduHeader DEFINITIONS AUTOMATIC TAGS ::= BEGIN
+
+-- Basic type definitions
+ProtocolVersion ::= INTEGER (0..255)
+MessageID ::= INTEGER (0..255)
+StationID ::= INTEGER (0..4294967295)
+
+-- ITS PDU Header
+ItsPduHeader ::= SEQUENCE {
+  protocolVersion ProtocolVersion,
+  messageID       MessageID,
+  stationID       StationID
+}
+
+END
