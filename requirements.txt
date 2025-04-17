@@ -1,0 +1,10 @@
+asn1tools==0.167.0
+bitstruct==8.20.0
+psutil==7.0.0
+psutils==3.3.9
+puremagic==1.28
+pyparsing==3.2.3
+pypdf==5.4.0
+scapy==2.6.1
+typeguard==4.4.2
+typing_extensions==4.13.2
