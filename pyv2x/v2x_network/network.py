@@ -3,9 +3,10 @@ from scapy.sendrecv import sendp, sniff
 
 from threading import Thread, Semaphore
 from typeguard import typechecked
-from queue import Queue
+from queue import PriorityQueue
 
-from pyv2x.etsi import ETSI
+from pyv2x.etsi import ETSI, ETSI_CAM, ETSI_DENM
+
 
 required = [ "interface" ]
 
@@ -13,7 +14,7 @@ required = [ "interface" ]
 class V2xNetwork:
 
     _sem = Semaphore(1)
-    _queue = Queue(maxsize=0)
+    _queue = PriorityQueue(maxsize=0)
 
 
     def __init__(self, **kwargs):
@@ -22,7 +23,7 @@ class V2xNetwork:
             raise Exception(f"wrong definition of V2xNetwork: {required}")
         
         self.__dict__.update(kwargs)
-        tshark = Thread(self.start_listener_v2x, daemon=True).start()
+        tshark = Thread(target=self.start_listener_v2x, daemon=True).start()
 
     def send_msg(self, packet: Packet) -> None:
         sendp(packet, iface=self.interface)
@@ -30,6 +31,17 @@ class V2xNetwork:
     def start_listener_v2x(self):
         sniff(iface=self.interface, prn=self.callback, count=10)
 
-    def callback(self, packet: Packet):
-        # TODO: check if is CAM or DENM
-        pass
+    def callback(self, packet: Packet):        
+        match ETSI.get_message_id(packet):
+            case 1:
+                self._queue.put((ETSI_CAM, packet))
+            case 2:
+                self._queue.put((ETSI_CAM, packet))
+            case _:
+                pass
+    
+    def is_empty(self) -> bool:
+        return self._queue.empty()
+
+    def get_new_msg(self) -> tuple:
+        return self._queue.get()

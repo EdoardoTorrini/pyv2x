@@ -1,9 +1,13 @@
 from scapy.packet import Packet, Raw
-from scapy.layers.l2 import SNAP
+from scapy.layers.l2 import SNAP, LLC
+from scapy.layers.dot11 import Dot11, Dot11QoS, RadioTap
+from scapy.compat import raw
 
 from pyv2x.v2x_utils import GeoNetworking, BTPb
+from pyv2x.v2x_cam import CAM
 
 import os
+import time
 import asn1tools
 from typeguard import typechecked
 
@@ -28,7 +32,7 @@ class ETSI(object):
     def get_message_id(cls, pkt: Packet) -> int:
 
         # SNAP and Raw are necessary to access to ETSI packages
-        if not pkt.haslayer(SNAP) and not pkt.haslayer(Raw): return -1
+        if not pkt.haslayer(SNAP) and not pkt.haslayer(Raw) and not pkt.haslayer(SNAP): return -1
         
         # if the SNAP code is not 0x8947 the packet not contain an GeoNetwork packet 
         if pkt[SNAP].code != 0x8947: return -1;
@@ -50,15 +54,29 @@ class ETSI(object):
     @classmethod
     def geo(cls, **kwargs) -> GeoNetworking:
         
-        if not all(elem in required_geo for elem in kwargs.keys()):
+        if not all(req in kwargs.keys() for req in required_geo):
             raise Exception(f"missing parameter for create a GeoNetwork frame, need {required_geo}")
 
-        return GeoNetworking(**kwargs, timestamp=GeoNetworking.get_gn_timestamp)
+        param = { key: kwargs[key] for key in required_geo }
+        return GeoNetworking(**param, timestamp=GeoNetworking.get_gn_timestamp())
 
     @classmethod
     def new_cam(cls, cam: asn1tools.compiler.Specification, **kwargs) -> Packet:
         
         geo, btpb = cls.geo(**kwargs), BTPb(destination_port=2001, info=0x5400)
-        
 
-        return cls.geo(**kwargs)
+        geo_raw, btpb_raw = raw(geo), raw(btpb)
+        cam_raw = raw(cam.encode("CAM", CAM(**kwargs).get_dict()))
+
+        dot11 = Dot11(subtype=8, type=2, proto=0, ID=0, addr1="ff:ff:ff:ff:ff:ff", addr2=kwargs.get("gn_addr_address"), addr3="ff:ff:ff:ff:ff:ff", SC=480)
+        qos = Dot11QoS(A_MSDU_Present=0, Ack_Policy=1, EOSP=0, TID=3, TXOP=0)
+
+        llc = LLC(dsap=0xaa, ssap=0xaa, ctrl=3)
+        snap = SNAP(OUI=0, code=0x8947)
+
+        mex = Raw(load=geo_raw+btpb_raw+cam_raw)
+        radio = RadioTap(present=0x400000, timestamp=int(time.perf_counter()), ts_accuracy=0, ts_position=0, ts_flags=None)
+
+        mex = radio / dot11 / qos / llc / snap / mex
+
+        return mex

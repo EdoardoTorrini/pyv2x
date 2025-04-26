@@ -27,7 +27,7 @@ class GeoNetworking(Packet):
         BitField("traffic_class_id", 2, 6),
         BitField("mobility_flags", 0, 1),
         BitField("flags_reserved", 0, 7),
-        BitField("payload_lenght", 0, 16),
+        BitField("payload_lenght", 50, 16),
         BitField("maximum_hop_limit", 1, 8),
         BitField("Reserved", 0, 8),
 
