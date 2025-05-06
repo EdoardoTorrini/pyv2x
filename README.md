@@ -3,6 +3,12 @@ Library for the sending and receiving the CAM, DENM message through the api. The
 * create its own branch for the developing
 * follow the standard definded into the [cam documentation](./doc/etsi_its_cam.pdf) and [denm documentation](./doc/etsi_its_denm.pdf)
 
+## Installation
+Download the last release and execute into a terminal:
+```bash 
+$ python -m pip install ./pyv2x.whl
+```
+
 ## Examples
 * send CAM message
 ```python
