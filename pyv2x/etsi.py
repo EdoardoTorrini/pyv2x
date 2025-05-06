@@ -5,6 +5,7 @@ from scapy.compat import raw
 
 from pyv2x.v2x_utils import GeoNetworking, BTPb
 from pyv2x.v2x_cam import CAM
+from pyv2x.v2x_denm import DENM
 
 import os
 import time
@@ -50,6 +51,14 @@ class ETSI(object):
             raise Exception("this is not a CAM packet")
         
         return cam.decode('CAM', bytes(BTPb(bytes(GeoNetworking(pkt[Raw].load).payload)).payload))
+    
+    @classmethod
+    def get_denm_payload(cls, pkt: Packet, denm: asn1tools.compiler.Specification) -> dict:
+
+        if cls.get_message_id(pkt) != ETSI_DENM:
+            raise Exception("this is not a DENM packet")
+        
+        return denm.decode('DENM', bytes(BTPb(bytes(GeoNetworking(pkt[Raw].load).payload)).payload))
 
     @classmethod
     def geo(cls, **kwargs) -> GeoNetworking:
@@ -75,6 +84,27 @@ class ETSI(object):
         snap = SNAP(OUI=0, code=0x8947)
 
         mex = Raw(load=geo_raw+btpb_raw+cam_raw)
+        radio = RadioTap(present=0x400000, timestamp=int(time.perf_counter()), ts_accuracy=0, ts_position=0, ts_flags=None)
+
+        mex = radio / dot11 / qos / llc / snap / mex
+
+        return mex
+    
+    @classmethod
+    def new_denm(cls, denm: asn1tools.compiler.Specification, **kwargs) -> Packet:
+
+        geo, btpb = cls.geo(**kwargs), BTPb(destination_port=2001, info=0x5400)
+
+        geo_raw, btpb_raw = raw(geo), raw(btpb)
+        denm_raw = raw(denm.encode("DENM", DENM(**kwargs).get_dict()))
+
+        dot11 = Dot11(subtype=8, type=2, proto=0, ID=0, addr1="ff:ff:ff:ff:ff:ff", addr2=kwargs.get("gn_addr_address"), addr3="ff:ff:ff:ff:ff:ff", SC=480)
+        qos = Dot11QoS(A_MSDU_Present=0, Ack_Policy=1, EOSP=0, TID=3, TXOP=0)
+
+        llc = LLC(dsap=0xaa, ssap=0xaa, ctrl=3)
+        snap = SNAP(OUI=0, code=0x8947)
+
+        mex = Raw(load=geo_raw+btpb_raw+denm_raw)
         radio = RadioTap(present=0x400000, timestamp=int(time.perf_counter()), ts_accuracy=0, ts_position=0, ts_flags=None)
 
         mex = radio / dot11 / qos / llc / snap / mex

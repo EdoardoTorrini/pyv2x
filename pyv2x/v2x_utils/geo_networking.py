@@ -53,7 +53,8 @@ class GeoNetworking(Packet):
     def get_data(self):
         return json.loads(self.json())
     
-    def get_gn_timestamp():
+    @classmethod
+    def get_gn_timestamp(cls):
         # Epoch ITS: 2004-01-01 00:00:00 UTC
         return int(
             (

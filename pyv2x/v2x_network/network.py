@@ -13,7 +13,6 @@ required = [ "interface" ]
 @typechecked
 class V2xNetwork:
 
-    _sem = Semaphore(1)
     _queue = PriorityQueue(maxsize=0)
 
 
