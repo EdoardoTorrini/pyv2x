@@ -19,7 +19,7 @@ class GeoNetworking(Packet):
 
         # Common Header
         BitField("common_next_header", 2, 4), 
-        BitField("h_reserved", 2, 4),
+        BitField("h_reserved", 0, 4),
         BitField("header_type", 5, 4),
         BitField("header_sub_type", 0, 4),
         BitField("traffic_story_carry_forward", 0, 1),

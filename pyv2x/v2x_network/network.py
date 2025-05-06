@@ -34,7 +34,7 @@ class V2xNetwork:
     def callback(self, packet: Packet):        
         match ETSI.get_message_id(packet):
             case 1:
-                self._queue.put((ETSI_CAM, packet))
+                self._queue.put((ETSI_DENM, packet))
             case 2:
                 self._queue.put((ETSI_CAM, packet))
             case _:
