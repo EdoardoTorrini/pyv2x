@@ -8,3 +8,5 @@ pypdf==5.4.0
 scapy==2.6.1
 typeguard==4.4.2
 typing_extensions==4.13.2
+pynmeagps==1.0.53
+pyserial==3.5
