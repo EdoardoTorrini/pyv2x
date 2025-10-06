@@ -14,6 +14,7 @@ $ python -m pip install ./pyv2x.whl
 ```python
 from pyv2x.etsi import ETSI
 from pyv2x.v2x_utils import GeoNetworking
+from pyv2x.v2x_network import V2xNetwork
 
 import asn1tools
 
@@ -27,6 +28,7 @@ altitude = 0
 mac_address = 'b4:b5:b6:c4:11:49'
 
 cam_spec = asn1tools.compile_files('asn/cam.asn', 'uper')
+net = V2xNetwork(interface=interface)
 
 cam_msg = ETSI.new_cam(
     cam_spec, gn_addr_address=mac_address, station_id=4935, latitude=latitude, longitude=longitude,
@@ -39,6 +41,7 @@ net.send_msg(cam_msg)
 ```python
 from pyv2x.etsi import ETSI
 from pyv2x.v2x_utils import GeoNetworking
+from pyv2x.v2x_network import V2xNetwork
 
 import asn1tools
 
@@ -52,6 +55,7 @@ altitude = 0
 mac_address = 'b4:b5:b6:c4:11:49'
 
 denm_spec = asn1tools.compile_files('asn/denm.asn', 'uper')
+net = V2xNetwork(interface=interface)
 
 denm_msg = ETSI.new_denm(
     denm_spec, gn_addr_address=mac_address, station_id=4825, latitude=latitude, longitude=longitude,
