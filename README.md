@@ -85,7 +85,7 @@ try:
             if type_ == ETSI_CAM:
                 data = ETSI.get_cam_payload(msg, cam_spec)
 
-            if type == ETSI_DENM:
+            if type_ == ETSI_DENM:
                 data = ETSI.get_denm_payload(msg, denm_spec)
                 
             print(f"message type: {type_}")
