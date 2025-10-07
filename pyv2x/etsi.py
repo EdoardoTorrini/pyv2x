@@ -3,6 +3,8 @@ from scapy.layers.l2 import SNAP, LLC
 from scapy.layers.dot11 import Dot11, Dot11QoS, RadioTap
 from scapy.compat import raw
 
+from pyshark.packet import packet
+
 from pyv2x.v2x_utils import GeoNetworking, BTPb
 from pyv2x.v2x_cam import CAM
 from pyv2x.v2x_denm import DENM
@@ -30,7 +32,7 @@ class ETSI(object):
     header = asn1tools.compile_files(header_path, 'uper') 
 
     @classmethod
-    def get_message_id(cls, pkt: Packet) -> int:
+    def get_message_id_scapy(cls, pkt: Packet) -> int:
 
         # SNAP and Raw are necessary to access to ETSI packages
         if not pkt.haslayer(SNAP) and not pkt.haslayer(Raw) and not pkt.haslayer(SNAP): return -1
@@ -45,9 +47,22 @@ class ETSI(object):
         return cls.header.decode('ItsPduHeader', bytes(BTPb(bytes(geo.payload)).payload)).get("messageID")
 
     @classmethod
+    def get_message_id(cls, pkt: packet.Packet) -> int:
+
+        if not hasattr(pkt, "gnw"): return -1
+
+        # from here is possible to make difference between the btpa or btpb
+        nh = getattr(pkt.gnw, "geonw.ch.nh", None)
+        if nh is None:
+            raise Exception("pkt has GeoNetwork layer, but next_header is not specified")
+
+        msg_id = getattr(pkt.its, "messageid", None)
+        return int(msg_id)
+
+    @classmethod
     def get_cam_payload(cls, pkt: Packet, cam: asn1tools.compiler.Specification) -> dict:
 
-        if cls.get_message_id(pkt) != ETSI_CAM:
+        if cls.get_message_id_scapy(pkt) != ETSI_CAM:
             raise Exception("this is not a CAM packet")
         
         return cam.decode('CAM', bytes(BTPb(bytes(GeoNetworking(pkt[Raw].load).payload)).payload))
@@ -55,7 +70,7 @@ class ETSI(object):
     @classmethod
     def get_denm_payload(cls, pkt: Packet, denm: asn1tools.compiler.Specification) -> dict:
 
-        if cls.get_message_id(pkt) != ETSI_DENM:
+        if cls.get_message_id_scapy(pkt) != ETSI_DENM:
             raise Exception("this is not a DENM packet")
         
         return denm.decode('DENM', bytes(BTPb(bytes(GeoNetworking(pkt[Raw].load).payload)).payload))
