@@ -5,6 +5,8 @@ from typeguard import typechecked
 @typechecked
 class DENM(ItsPduHeader):
 
+    name = "DENM"
+
     _denm_req = [ "station_id", "delta_time", "latitude", "longitude", "distance", "traffic_direction" ]
     _rel_distance = [ "lessThan50m", "lessThan100m", "lessThan200m", "lessThan500m", "lessThan1000m", "lessThan5km", "lessThan10km", "over10km" ]
     _rel_traffic_direction = [ "allTrafficDirections", "upstreamTraffic", "downstreamTraffic", "oppositeTraffic" ]

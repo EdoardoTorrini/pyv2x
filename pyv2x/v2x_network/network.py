@@ -5,14 +5,18 @@ from threading import Thread, Semaphore
 from typeguard import typechecked
 from queue import Queue, Empty
 
-from pyv2x.etsi import ETSI, ETSI_CAM, ETSI_DENM
+from pyv2x.etsi import ETSI, V2xTMsg
+from pyv2x.v2x_cam import CAM
+from pyv2x.v2x_denm import DENM
 
 import pyshark
 from pyshark.packet import packet
+
 import time
+import asn1tools
+import sys
 
-
-required = [ "interface" ]
+required = [ "interface", "cparser", "dparser" ]
 
 @typechecked
 class V2xNetwork:
@@ -23,6 +27,13 @@ class V2xNetwork:
             raise Exception(f"wrong definition of V2xNetwork: {required}")
         
         self.__dict__.update(kwargs)
+        
+        if not isinstance(self.cparser, asn1tools.compiler.Specification):
+            raise Execption("cparser must be asn1tools.compiler.Specification - with CAM asn.1")
+
+        if not isinstance(self.dparser, asn1tools.compiler.Specification):
+            raise Exception("dparser must be asn1tools.compiler.Specification - with DENM asn.1") 
+
         self._queue = Queue(maxsize=0)
         tshark = Thread(target=self.start_listener_v2x, daemon=True).start()
 
@@ -31,15 +42,28 @@ class V2xNetwork:
 
     def start_listener_v2x(self):
         self._trace = pyshark.LiveCapture(interface=self.interface)
-        for pkt in self._trace:
-            nh = ETSI.get_message_id(pkt)
-            self._queue.put(pkt)
+        for pkt in self._trace.sniff_continuously():
+            msg = None
+            try: 
+                nh = ETSI.get_message_id(pkt)
+                match nh:
+                    case V2xTMsg.ETSI_DENM:
+                        continue
+                    case V2xTMsg.ETSI_CAM:
+                        msg = ETSI.format_msg(self.cparser, CAM, **dict(CAM(flat=pkt)))
+            except Exception as e:
+                # print(f"error: {str(e)}", file=sys.stderr)
+                continue
+
+            if msg is not None:
+                self._queue.put(msg)
+
             time.sleep(0.1)
     
     def is_empty(self) -> bool:
         return self._queue.empty()
 
-    def get_new_msg(self) -> packet.Packet | None:
+    def get_new_msg(self) -> packet.Packet | Packet | None:
         try:
             return self._queue.get_nowait()
         except Empty:

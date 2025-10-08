@@ -1,5 +1,5 @@
 from scapy.packet import Packet, Raw
-from scapy.layers.l2 import SNAP, LLC
+from scapy.layers.l2 import SNAP, LLC, Ether
 from scapy.layers.dot11 import Dot11, Dot11QoS, RadioTap
 from scapy.compat import raw
 
@@ -15,8 +15,9 @@ import asn1tools
 from typeguard import typechecked
 
 
-ETSI_DENM   = 1
-ETSI_CAM    = 2
+class V2xTMsg:
+    ETSI_DENM   = 1
+    ETSI_CAM    = 2
 
 required_geo = [ "gn_addr_address", "latitude", "longitude", "speed", "heading" ]
 
@@ -32,7 +33,7 @@ class ETSI(object):
     header = asn1tools.compile_files(header_path, 'uper') 
 
     @classmethod
-    def get_message_id_scapy(cls, pkt: Packet) -> int:
+    def _get_message_id_scapy(cls, pkt: Packet | RadioTap) -> int:
 
         # SNAP and Raw are necessary to access to ETSI packages
         if not pkt.haslayer(SNAP) and not pkt.haslayer(Raw) and not pkt.haslayer(SNAP): return -1
@@ -47,7 +48,7 @@ class ETSI(object):
         return cls.header.decode('ItsPduHeader', bytes(BTPb(bytes(geo.payload)).payload)).get("messageID")
 
     @classmethod
-    def get_message_id(cls, pkt: packet.Packet) -> int:
+    def _get_message_id_pyshark(cls, pkt: packet.Packet) -> int:
 
         if not hasattr(pkt, "gnw"): return -1
 
@@ -60,17 +61,31 @@ class ETSI(object):
         return int(msg_id)
 
     @classmethod
-    def get_cam_payload(cls, pkt: Packet, cam: asn1tools.compiler.Specification) -> dict:
+    def get_message_id(cls, pkt: packet.Packet | Packet | RadioTap) -> int:
+        if isinstance(pkt, packet.Packet):
+            return cls._get_message_id_pyshark(pkt)
+        if isinstance(pkt, Packet) or isinstance(pkt, RadioTap):
+            return cls._get_message_id_scapy(pkt)
+        return -1
 
-        if cls.get_message_id_scapy(pkt) != ETSI_CAM:
+    @classmethod
+    def get_cam_payload(cls, pkt: Packet | packet.Packet | RadioTap, cam: asn1tools.compiler.Specification) -> dict:
+        
+        if isinstance(pkt, packet.Packet):
+            pkt = cls.new_cam(cam, **dict(CAM(flat=pkt)))
+
+        if cls.get_message_id(pkt) != V2xTMsg.ETSI_CAM:
             raise Exception("this is not a CAM packet")
         
         return cam.decode('CAM', bytes(BTPb(bytes(GeoNetworking(pkt[Raw].load).payload)).payload))
     
     @classmethod
-    def get_denm_payload(cls, pkt: Packet, denm: asn1tools.compiler.Specification) -> dict:
+    def get_denm_payload(cls, pkt: Packet | packet.Packet, denm: asn1tools.compiler.Specification) -> dict:
 
-        if cls.get_message_id_scapy(pkt) != ETSI_DENM:
+        if isinstance(pkt, packet.Packet):
+            pkt = Ether( bytes( pkt.get_raw_packet() ) )
+
+        if cls.get_message_id(pkt) != V2xTMsg.ETSI_DENM:
             raise Exception("this is not a DENM packet")
         
         return denm.decode('DENM', bytes(BTPb(bytes(GeoNetworking(pkt[Raw].load).payload)).payload))
@@ -85,33 +100,12 @@ class ETSI(object):
         return GeoNetworking(**param, timestamp=GeoNetworking.get_gn_timestamp())
 
     @classmethod
-    def new_cam(cls, cam: asn1tools.compiler.Specification, **kwargs) -> Packet:
+    def format_msg(cls, parser: asn1tools.compiler.Specification, tmsg: type, **kwargs) -> Packet:
         
         geo, btpb = cls.geo(**kwargs), BTPb(destination_port=2001, info=0x5400)
 
         geo_raw, btpb_raw = raw(geo), raw(btpb)
-        cam_raw = raw(cam.encode("CAM", CAM(**kwargs).get_dict()))
-
-        dot11 = Dot11(subtype=8, type=2, proto=0, ID=0, addr1="ff:ff:ff:ff:ff:ff", addr2=kwargs.get("gn_addr_address"), addr3="ff:ff:ff:ff:ff:ff", SC=480)
-        qos = Dot11QoS(A_MSDU_Present=0, Ack_Policy=1, EOSP=0, TID=3, TXOP=0)
-
-        llc = LLC(dsap=0xaa, ssap=0xaa, ctrl=3)
-        snap = SNAP(OUI=0, code=0x8947)
-
-        mex = Raw(load=geo_raw+btpb_raw+cam_raw)
-        radio = RadioTap(present=0x400000, timestamp=int(time.perf_counter()), ts_accuracy=0, ts_position=0, ts_flags=None)
-
-        mex = radio / dot11 / qos / llc / snap / mex
-
-        return mex
-    
-    @classmethod
-    def new_denm(cls, denm: asn1tools.compiler.Specification, **kwargs) -> Packet:
-
-        geo, btpb = cls.geo(**kwargs), BTPb(destination_port=2001, info=0x5400)
-
-        geo_raw, btpb_raw = raw(geo), raw(btpb)
-        denm_raw = raw(denm.encode("DENM", DENM(**kwargs).get_dict()))
+        denm_raw = raw(parser.encode(tmsg.name, tmsg(**kwargs).get_dict()))
 
         dot11 = Dot11(subtype=8, type=2, proto=0, ID=0, addr1="ff:ff:ff:ff:ff:ff", addr2=kwargs.get("gn_addr_address"), addr3="ff:ff:ff:ff:ff:ff", SC=480)
         qos = Dot11QoS(A_MSDU_Present=0, Ack_Policy=1, EOSP=0, TID=3, TXOP=0)
