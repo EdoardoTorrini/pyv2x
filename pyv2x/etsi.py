@@ -36,7 +36,7 @@ class ETSI(object):
     def _get_message_id_scapy(cls, pkt: Packet | RadioTap) -> int:
 
         # SNAP and Raw are necessary to access to ETSI packages
-        if not pkt.haslayer(SNAP) and not pkt.haslayer(Raw) and not pkt.haslayer(SNAP): return -1
+        if not pkt.haslayer(SNAP) and not pkt.haslayer(Raw): return -1
         
         # if the SNAP code is not 0x8947 the packet not contain an GeoNetwork packet 
         if pkt[SNAP].code != 0x8947: return -1;

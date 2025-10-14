@@ -1,65 +1,133 @@
 from pyv2x.v2x_utils import ItsPduHeader
+from pyshark.packet.packet import Packet
 
 from typeguard import typechecked
+
 
 @typechecked
 class DENM(ItsPduHeader):
 
     name = "DENM"
+    _denm_req = [ "station_id", "detection_time", "latitude", "longitude", "relevance_traffic_direction", "cause_code" ]
+    
+    # TODO: fare una classe con queste informazioni
+    _cause_code = {
+        "0":    "trafficCondition",
+        "1":    "accident",
+        "2":    "roadworks",
+        "3":    "adverseWeatherCondition-Adhesion",
+        "4":    "hazardousLocation-SurfaceCondition",
+        "5":    "hazardousLocation-ObstacleOnTheRoad",
+        "6":    "hazardousLocation-AnimalOnTheRoad",
+        "7":    "humanPresenceOnTheRoad",
+        "8":    "wrongWayDriving",
+        "9":    "rescueAndRecoveryWorkInProgress",
+        "10":   "adverseWeatherCondition-ExtremeWeather",
+        "11":   "adverseWeatherCondition-Visibility",
+        "12":   "adverseWeatherCondition-Precipitation",
+        "13":   "slowVehicle",
+        "14":   "dangerousEndOfQueue",
+        "15":   "vehicleBreakdown",
+        "16":   "postCrash",
+        "17":   "humanProblem",
+        "18":   "stationaryVehicle",
+        "19":   "emergencyVehicleApproaching",
+        "20":   "hazardousLocation-DangerousCurve",
+        "21":   "collisionRisk",
+        "22":   "signalViolation",
+        "23":   "dangerousSituation",
+    }
 
-    _denm_req = [ "station_id", "delta_time", "latitude", "longitude", "distance", "traffic_direction" ]
-    _rel_distance = [ "lessThan50m", "lessThan100m", "lessThan200m", "lessThan500m", "lessThan1000m", "lessThan5km", "lessThan10km", "over10km" ]
-    _rel_traffic_direction = [ "allTrafficDirections", "upstreamTraffic", "downstreamTraffic", "oppositeTraffic" ]
+    # TODO: altra classe
+    _info_quality = {
+        "0": "unavailable",
+        "1": "lowest",
+        "2": "veryLow",
+        "3": "low",
+        "4": "medium",
+        "5": "high",
+        "6": "veryHigh",
+        "7": "highest",
+    }
+
+    _event_pos_confidence = {
+        "0": "unavailable",
+        "1": "low",
+        "2": "medium",
+        "3": "high",
+    }
+
+    _relevance_distance = {
+        "0": "lessThan50m",
+        "1": "lessThan100m",
+        "2": "lessThan200m",
+        "3": "lessThan500m",
+        "4": "lessThan1000m",
+        "5": "lessThan5km",
+        "6": "lessThan10km",
+        "7": "over10km",
+        "8": "unavailable",
+    }
+
+    _relevance_traffic_direction = {
+        "0": "upstreamTraffic",
+        "1": "downstreamTraffic",
+        "2": "oppositeTraffic",
+        "3": "allTrafficDirections",
+        "4": "unavailable",
+    }
 
     def __init__(self, **kwargs) -> None:
         
         if not all(req in kwargs.keys() for req in self._denm_req):
             raise Exception(f"missing parameter for DENM frame, need: {self._denm_req}")
-        self.__dict__.update(kwargs)
-
-        if self.distance not in self._rel_distance:
-            raise Exception(f"distance parameter must be in: {self._rel_distance}")
         
-        if self.traffic_direction not in self._rel_traffic_direction:
-            raise Exception(f"traffic direction parameter must be in: {self._rel_traffic_direction}")
+        self.__dict__.update(kwargs)
+        
+
 
         super().__init__(version=2, message_id=1, station_id=self.station_id)
-
+    
     def get_dict(self):
-        # TODO: remove all static parameters
         return {
-            'header': {'protocolVersion': self.version, 'messageId': self.message_id, 'stationId': self.station_id}, 
+            'header': {
+                'protocolVersion': self.protocol_version,
+                'messageID': self.message_id,
+                'stationID': self.station_id
+            },
             'denm': {
                 'management': {
                     'actionID': {
-                        'originatingStationId': 999, 
-                        'sequenceNumber': 101
-                    }, 
-                    'detectionTime': self.delta_time, 
-                    'referenceTime': self.delta_time,
+                        'originatingStationID': self.originating_station_id,
+                        'sequenceNumber': self.sequence_number
+                    },
+                    'detectionTime': self.detection_time,
+                    'referenceTime': self.reference_time,
                     'eventPosition': {
-                        'latitude': self.latitude, 'longitude': self.longitude, 
+                        'latitude': self.latitude,
+                        'longitude': self.longitude,
                         'positionConfidenceEllipse': {
-                            'semiMajorConfidence': 100,
-                            'semiMinorConfidence': 100, 
-                            'semiMajorOrientation': 0
-                        }, 
+                            'semiMajorConfidence': self.semi_major_confidence,
+                            'semiMinorConfidence': self.semi_minor_confidence,
+                            'semiMajorOrientation': self.semi_major_orientation
+                        },
                         'altitude': {
-                            'altitudeValue': 10, 
-                            'altitudeConfidence': 'alt-000-01'
+                            'altitudeValue': self.altitude_value,
+                            'altitudeConfidence': self.altitude_confidence
                         }
                     },
-                    'relevanceDistance': self.distance, 
-                    'relevanceTrafficDirection': self.traffic_direction, 
-                    'validityDuration': 59, 
-                    'stationType': 15
-                }, 
-                'situation': {
-                    'informationQuality': 6, 
-                    'eventType': {
-                        'causeCode': 3, 
-                        'subCauseCode': 0
-                    }
+                    'relevanceDistance': self.relevance_distance,
+                    'relevanceTrafficDirection': self.relevance_traffic_direction,
+                    'validityDuration': self.validity_duration,
+                    'stationType': self.station_type
                 },
+                'situation': {
+                    'informationQuality': self.information_quality,
+                    'eventType': {
+                        'causeCode': self.cause_code,
+                        'subCauseCode': self.sub_cause_code
+                    }
+                }
             }
         }
+ 
