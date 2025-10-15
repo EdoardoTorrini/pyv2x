@@ -80,20 +80,20 @@ class V2xAsnP:
             datatype = FlatDict(self._dspec.get(root), delimiter=".")
             for leaf, t in trees.items():
                 if t in self._ac_datatype:
-                    self._flat_dict[leaf] = t
+                    self._flat_dict[leaf] = { "type": t, "optional": False }
                 elif f"types.{t}.members" in datatype.keys():
                     self.find_leaf_type(datatype, datatype.get(f"types.{t}.members"), leaf, t)
                 elif f"types.{t}.type" in datatype.keys():
                     self.find_leaf_type(datatype, {}, leaf, datatype.get(f"types.{t}.type"), t)
 
-    # TODO: finish
+    # TODO: remove hardcoded "optional": False
     def find_leaf_type(self, all: FlatDict | dict, sub: dict | list, base_name: str, base_type: str, old_type: str = "") -> int:        
         try:
             if base_type in self._ac_datatype:
                 if base_type == "ENUMERATED": 
-                    self._flat_dict[base_name] = {"type": base_type, "value": all.get(f"types.{old_type}.values")}
+                    self._flat_dict[base_name] = {"type": base_type, "value": all.get(f"types.{old_type}.values"), "optional": False}
                 else: 
-                    self._flat_dict[base_name] = base_type
+                    self._flat_dict[base_name] = { "type": base_type, "optional": False }
                 return 0
             if isinstance(sub, list):
                 for el in sub:
@@ -111,22 +111,39 @@ class V2xAsnP:
     def create_class(self):
         return type(self._name, (V2xMsg,), {
             "name": self._name,
-            "_required": self.req,
-            "_spec": asn1tools.compile_dict(self._dspec),
+            "_required": [ key.split(".")[-1] for key in self._flat_dict if not self._flat_dict.get(key).get("optional") ],
+            "_spec": asn1tools.compile_dict(self._dspec, "uper"),
             "_flat_dict": self._flat_dict
         })
 
+
+@typechecked
 class V2xMsg:
+
+    _is_raw = False
+    _raw_data = None
 
     def __init__(self, **kwargs):
 
         if "raw_bytes" in kwargs.keys():
             try: 
-                self._spec.decode(self._name, kwargs.get("raw_bytes"))
+                self._raw_data = kwargs.get("raw_bytes")
+                self._is_raw = True
             except: raise Exception("generic error")
+        
+        else:
+            if not all(req in kwargs for req in self._required):
+                raise Exception(f"Missing parameter for CAM frame, need: {self._required}")
 
-        if not all(req in kwargs for req in self._cam_req):
-            raise Exception(f"Missing parameter for CAM frame, need: {self._cam_req}")
+            self.__dict__.update(**kwargs)
+
+    def __iter__(self):
+        return iter(self.__dict__.items())
+
+    def as_dict(self):
+        return FlatDict({
+            key: self.__dict__.get(key.split(".")[-1]) for key in self._flat_dict.keys()
+        }, delimiter=".").as_dict()        
 
 
 files = ["./asn/cam/CAM-PDU-Descriptions.asn", "./asn/cam/cdd/ITS-Container.asn"]
