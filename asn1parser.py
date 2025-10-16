@@ -1,5 +1,6 @@
 from flatdict import FlatDict
 from typeguard import typechecked
+from typing import Iterable
 import os
 import asn1tools
 
@@ -7,7 +8,7 @@ import asn1tools
 @typechecked
 class V2xAsnP:
 
-    _ac_datatype = ["INTEGER", "ENUMERATED", "BIT STRING"]
+    _ac_datatype = ["INTEGER", "ENUMERATED", "BIT STRING", "OCTET STRING"]
     _get_key = lambda x: os.path.splitext(os.path.basename(x))[0]
 
     _keys = []
@@ -16,6 +17,7 @@ class V2xAsnP:
     _flat_dict = {}
     _tree = {}
     _imports = []
+    _choice = {}
 
     @classmethod
     def new(cls, name: str, file: list | str) -> "V2xAsnP":
@@ -53,6 +55,13 @@ class V2xAsnP:
         self._keys_structure = list(set(self._keys_structure))
         return len(self._imports) != 0
 
+    def _sort(self, data: Iterable) -> list:
+        return sorted(
+            data,
+            key=lambda x: x[1] if isinstance(x, tuple) and len(x) > 1 else float('-inf'),
+            reverse=True
+        )
+
     def _parser_structure(self) -> dict:
         _tree_= {} 
         for k in self._keys_structure:
@@ -60,10 +69,10 @@ class V2xAsnP:
             for root in self._keys_datatype:
                 self._tree = {self._name: root}
                 for key in structure.keys():
-                    if key.split(".")[-1] != "members":
-                        continue
-                    if key.split(".")[1] in self._tree.keys():
-                        root = self._tree[key.split(".")[1]]
+                    if key.split(".")[-1] != "members": continue
+                    if structure.get(f"types.{key.split(".")[1]}.type") == "CHOICE":
+                       self._choice[key.split(".")[1]] = [ value.get("name") for value in structure.get(f"types.{key.split(".")[1]}.members")[:-1] ] 
+                    if key.split(".")[1] in self._tree.keys(): root = self._tree[key.split(".")[1]]
                     for member in structure.get(key):
                         try:
                             if member.get("type") not in self._tree.keys():
@@ -79,8 +88,10 @@ class V2xAsnP:
         for root in self._keys_datatype:
             datatype = FlatDict(self._dspec.get(root), delimiter=".")
             for leaf, t in trees.items():
+                if t == "CurvatureCalculationMode":
+                    i = 0
                 if t in self._ac_datatype:
-                    self._flat_dict[leaf] = { "type": t, "optional": False }
+                    self._flat_dict[leaf] = { "type": t, "optional": True }
                 elif f"types.{t}.members" in datatype.keys():
                     self.find_leaf_type(datatype, datatype.get(f"types.{t}.members"), leaf, t)
                 elif f"types.{t}.type" in datatype.keys():
@@ -90,10 +101,41 @@ class V2xAsnP:
     def find_leaf_type(self, all: FlatDict | dict, sub: dict | list, base_name: str, base_type: str, old_type: str = "") -> int:        
         try:
             if base_type in self._ac_datatype:
-                if base_type == "ENUMERATED": 
-                    self._flat_dict[base_name] = {"type": base_type, "value": all.get(f"types.{old_type}.values"), "optional": False}
-                else: 
-                    self._flat_dict[base_name] = { "type": base_type, "optional": False }
+                match base_type:
+                    case "ENUMERATED":
+                        val = all.get(f"types.{old_type}.values")
+                        self._flat_dict[base_name] = {
+                            "type": base_type,
+                            "value": val,
+                            "optional": True,
+                            "default": self._sort(val)[0][0]
+                        }
+                    case "BIT STRING":
+                        size = all.get(f"types.{old_type}.size")[0]
+                        self._flat_dict[base_name] = {
+                            "type": base_type,
+                            "length": size,
+                            "info": all.get(f"types.{old_type}.named-bits"),
+                            "optional": True,
+                            "default": (b"\x00", 8)
+                        }
+                    case "INTEGER":
+                        self._flat_dict[base_name] = {
+                            "type": base_type,
+                            "optional": True,
+                            "default": 0
+                        }
+                    case "OCTET STRING":
+                        self._flat_dict[base_name] = {
+                            "type": base_type,
+                            "optional": True,
+                            "default": b"\x00"
+                        }
+                    case _:
+                        self._flat_dict[base_name] = {
+                            "type": base_type,
+                            "optional": True
+                        }
                 return 0
             if isinstance(sub, list):
                 for el in sub:
@@ -113,7 +155,8 @@ class V2xAsnP:
             "name": self._name,
             "_required": [ key.split(".")[-1] for key in self._flat_dict if not self._flat_dict.get(key).get("optional") ],
             "_spec": asn1tools.compile_dict(self._dspec, "uper"),
-            "_flat_dict": self._flat_dict
+            "_flat_dict": self._flat_dict,
+            "_choice": self._choice
         })
 
 
@@ -140,14 +183,26 @@ class V2xMsg:
     def __iter__(self):
         return iter(self.__dict__.items())
 
+    def _get_val(self, desc: dict, k: str): 
+        default = desc.get("default") if "default" in desc.keys() else None
+        val = self.__dict__.get(k, default)
+        return val
+
     def as_dict(self):
         return FlatDict({
-            key: self.__dict__.get(key.split(".")[-1]) for key in self._flat_dict.keys()
+            ".".join(key.split(".")[1:]): self._get_val(value, key.split(".")[-1]) for key, value in self._flat_dict.items()
         }, delimiter=".").as_dict()        
+
+    def encode(self):
+        return self._spec.encode(self.name, self.as_dict())
 
 
 files = ["./asn/cam/CAM-PDU-Descriptions.asn", "./asn/cam/cdd/ITS-Container.asn"]
 spec = V2xAsnP.new("CAM", files)
 CAM = spec.create_class()
 
+prova = CAM(protocolVersion=2, messageID=2, stationID=4316, stationType=15, generationDeltaTime=10000, latitude=446560626, longitude=109214040, altitudeValue=9650, speedValue=2777)
+print(dict(prova))
+print(prova.as_dict())
+print(prova.encode())
 exit()
