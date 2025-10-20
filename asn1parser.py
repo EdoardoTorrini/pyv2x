@@ -71,7 +71,7 @@ class V2xAsnP:
                 for key in structure.keys():
                     if key.split(".")[-1] != "members": continue
                     if structure.get(f"types.{key.split(".")[1]}.type") == "CHOICE":
-                       self._choice[key.split(".")[1]] = [ value.get("name") for value in structure.get(f"types.{key.split(".")[1]}.members")[:-1] ] 
+                       self._choice[ self._tree.get(key.split(".")[1]).split(".")[-1] ] = [ value.get("name") for value in structure.get(f"types.{key.split(".")[1]}.members")[:-1] ] 
                     if key.split(".")[1] in self._tree.keys(): root = self._tree[key.split(".")[1]]
                     for member in structure.get(key):
                         try:
@@ -83,7 +83,8 @@ class V2xAsnP:
                                 _tree_[root + "." + member.get("name")] = structure.get(f"types.{member.get("type")}.type")
                         except: continue
         return _tree_
-    
+   
+    # TODO: PathHistory::= SEQUENCE (SIZE(0..40)) OF PathPoint -> this type is managed wrong
     def _parser_datatype(self, trees: dict):
         for root in self._keys_datatype:
             datatype = FlatDict(self._dspec.get(root), delimiter=".")
@@ -189,9 +190,28 @@ class V2xMsg:
         return val
 
     def as_dict(self):
-        return FlatDict({
-            ".".join(key.split(".")[1:]): self._get_val(value, key.split(".")[-1]) for key, value in self._flat_dict.items()
-        }, delimiter=".").as_dict()        
+
+        # TODO: the field CHOICE in the asn1 is not managed correctly
+        # for semplicity I have omitted the sequence field optional in the CamParameters
+        tmp, choice_base, all_base = {}, {}, {}
+        for k, val in {a: self._choice.get(a) for a in list(self._choice.keys())[:1]}.items():
+            for key in self._flat_dict.keys():
+                if key.find(k) > -1:
+                    l = key.split(f".{k}.")
+                    nkey = l[0] + "." + k
+                    if nkey not in tmp.keys(): tmp[ nkey ] = (val[0], {".".join( l[1].split(".")[1:] ): self._get_val(self._flat_dict.get(key), key.split(".")[-1])} )
+                    else: tmp[ nkey ][1][".".join( l[1].split(".")[1:] )] = self._get_val(self._flat_dict.get(key), key.split(".")[-1])
+
+        for key, value in tmp.items():
+            choice_base[ key ] = (value[0], FlatDict(value[1], delimiter=".").as_dict())
+
+        for key, value in self._flat_dict.items():
+            if all([ not key.find(k) > -1 for k in self._choice.keys() ]) and key not in all_base.keys():
+                    all_base[key] = self._get_val(value, key.split(".")[-1])
+
+        all_base.update(choice_base)
+
+        return FlatDict({".".join(key.split(".")[1:]): value for key, value in all_base.items()}, delimiter=".").as_dict()        
 
     def encode(self):
         return self._spec.encode(self.name, self.as_dict())
@@ -202,7 +222,8 @@ spec = V2xAsnP.new("CAM", files)
 CAM = spec.create_class()
 
 prova = CAM(protocolVersion=2, messageID=2, stationID=4316, stationType=15, generationDeltaTime=10000, latitude=446560626, longitude=109214040, altitudeValue=9650, speedValue=2777)
-print(dict(prova))
-print(prova.as_dict())
+print("attr: ", dict(prova))
+print("as_dict: ", prova.as_dict())
 print(prova.encode())
+
 exit()
