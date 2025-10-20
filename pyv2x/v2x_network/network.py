@@ -16,6 +16,8 @@ import time
 import asn1tools
 import sys
 
+# TODO: change the logic behind the parsing of msg, pass only the its_raw.value into the Queue
+# remove the cparser e dparser, on top of that we can identify the message type
 required = [ "interface", "cparser", "dparser" ]
 
 @typechecked
@@ -43,6 +45,7 @@ class V2xNetwork:
     def start_listener_v2x(self):
         self._trace = pyshark.LiveCapture(interface=self.interface)
         for pkt in self._trace.sniff_continuously():
+            # TODO: self._queue.put(bytes.fromhex(pkt.its_raw.value)
             msg = None
             try: 
                 nh = ETSI.get_message_id(pkt)

@@ -4,6 +4,9 @@ from typing import Iterable
 import os
 import asn1tools
 
+from scapy.packet import Packet as p_scapy
+from pyshark.packet.packet import Packet as p_pyshark
+
 
 @typechecked
 class V2xAsnP:
@@ -11,13 +14,14 @@ class V2xAsnP:
     _ac_datatype = ["INTEGER", "ENUMERATED", "BIT STRING", "OCTET STRING"]
     _get_key = lambda x: os.path.splitext(os.path.basename(x))[0]
 
-    _keys = []
-    _keys_structure = []
-    _keys_datatype = []
-    _flat_dict = {}
-    _tree = {}
-    _imports = []
-    _choice = {}
+    def __init__(self):
+        self._keys = []
+        self._keys_structure = []
+        self._keys_datatype = []
+        self._flat_dict = {}
+        self._tree = {}
+        self._imports = []
+        self._choice = {}
 
     @classmethod
     def new(cls, name: str, file: list | str) -> "V2xAsnP":
@@ -98,7 +102,7 @@ class V2xAsnP:
                 elif f"types.{t}.type" in datatype.keys():
                     self.find_leaf_type(datatype, {}, leaf, datatype.get(f"types.{t}.type"), t)
 
-    # TODO: remove hardcoded "optional": False
+    # TODO: remove hardcoded "optional": True
     def find_leaf_type(self, all: FlatDict | dict, sub: dict | list, base_name: str, base_type: str, old_type: str = "") -> int:        
         try:
             if base_type in self._ac_datatype:
@@ -163,15 +167,18 @@ class V2xAsnP:
 
 @typechecked
 class V2xMsg:
-
     _is_raw = False
     _raw_data = None
-
+    
+    # TODO: make more specific the raise error
     def __init__(self, **kwargs):
 
-        if "raw_bytes" in kwargs.keys():
-            try: 
-                self._raw_data = kwargs.get("raw_bytes")
+        if "pkt" in kwargs.keys():
+            try:
+                self._pkt = kwargs.get("pkt")
+                if not isinstance(self._pkt, p_scapy) and not isinstance(self._pkt, p_pyshark):
+                    raise Exception("generic error")
+                self._decode()
                 self._is_raw = True
             except: raise Exception("generic error")
         
@@ -214,16 +221,22 @@ class V2xMsg:
         return FlatDict({".".join(key.split(".")[1:]): value for key, value in all_base.items()}, delimiter=".").as_dict()        
 
     def encode(self):
-        return self._spec.encode(self.name, self.as_dict())
+        return self._spec.encode(self.name, self.as_dict()) 
 
+    def _decode(self):
 
-files = ["./asn/cam/CAM-PDU-Descriptions.asn", "./asn/cam/cdd/ITS-Container.asn"]
-spec = V2xAsnP.new("CAM", files)
-CAM = spec.create_class()
-
-prova = CAM(protocolVersion=2, messageID=2, stationID=4316, stationType=15, generationDeltaTime=10000, latitude=446560626, longitude=109214040, altitudeValue=9650, speedValue=2777)
-print("attr: ", dict(prova))
-print("as_dict: ", prova.as_dict())
-print(prova.encode())
-
-exit()
+        match self._pkt:
+            case p_scapy(): pass
+            case p_pyshark():
+                tmp = self._spec.decode(self.name, bytes.fromhex(self._pkt.its_raw.value))
+                for key, value in self._flat_dict.items():
+                    nk, base, i = key.split(".")[1:], tmp, 0
+                    while i < len(nk):
+                        if not isinstance(base, dict): break
+                        if nk[i] in self._choice.keys():
+                            base = base.get(nk[i], [None, None])[1]
+                            i += 1
+                        else: 
+                            base = base.get(nk[i], value.get("default"))
+                        i += 1
+                    self.__dict__.update(**{nk[-1]: base})
