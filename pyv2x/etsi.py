@@ -51,13 +51,17 @@ class ETSI(object):
     def _get_message_id_pyshark(cls, pkt: packet.Packet) -> int:
 
         if not hasattr(pkt, "gnw"): return -1
+        if not hasattr(pkt.gnw, "ch"): return -1
 
         # from here is possible to make difference between the btpa or btpb
-        nh = getattr(pkt.gnw, "geonw.ch.nh", None)
+        nh = getattr(pkt.gnw.ch, "nh", None)
         if nh is None:
             raise Exception("pkt has GeoNetwork layer, but next_header is not specified")
 
-        msg_id = getattr(pkt.its, "messageid", None)
+        if not hasattr(pkt.its, "ItsPduHeader_element"):
+            raise Exception("pkt has not ItsPduHeader or it is in wrong form - it must be raw")
+
+        msg_id = getattr(pkt.its.ItsPduHeader_element, "messageId", None)
         return int(msg_id)
 
     @classmethod

@@ -1,4 +1,4 @@
-from .asn1parser import *
+from asn1parser import *
 
 from pyv2x import ETSI, V2xTMsg
 from pyv2x.v2x_network import V2xNetwork
@@ -14,12 +14,14 @@ DENM = V2xAsnP.new("DENM", dfiles).create_class()
 # print("as_dict: ", prova.as_dict())
 # print("enc: ", prova.encode())
 
-iface = "hwsim0"
-net = V2xNetwork(iface, CAM.get_spec(), DENM.get_spec()) 
+# iface = "hwsim0"
+# net = V2xNetwork(iface, CAM.get_spec(), DENM.get_spec()) 
 
 import pyshark
+from scapy.all import *
 
-for pkt in pyshark.FileCapture(input_file="./out1.pcap", use_json=True, include_raw=True):
+for pkt in pyshark.FileCapture(input_file="./out.pcap", use_json=True, include_raw=True):
+# for pkt in rdpcap('./out.pcap'):
     
     message_id = ETSI.get_message_id(pkt)
     
@@ -27,9 +29,8 @@ for pkt in pyshark.FileCapture(input_file="./out1.pcap", use_json=True, include_
 
         case V2xTMsg.ETSI_DENM: 
             msg = DENM(pkt=pkt)
-            pass
+            print(f"DENM msg: {msg}")
 
         case V2xTMsg.ETSI_CAM:
             msg = CAM(pkt=pkt)
-            continue
-
+            print(f"CAM msg: {msg}")
