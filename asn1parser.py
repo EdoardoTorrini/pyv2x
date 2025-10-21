@@ -165,6 +165,12 @@ class V2xAsnP:
         })
 
 
+from pyv2x.v2x_utils import GeoNetworking, BTPb
+from scapy.packet import Packet as p_scapy
+from scapy.packet import Raw
+from pyshark.packet.packet import Packet as p_pyshark
+
+
 @typechecked
 class V2xMsg:
     _is_raw = False
@@ -189,7 +195,10 @@ class V2xMsg:
             self.__dict__.update(**kwargs)
 
     def __iter__(self):
-        return iter(self.__dict__.items())
+        return iter({ key: val for key, val in self.__dict__.items() if not key.startswith("_") })
+
+    def __repr__(self):
+        return "".join([ f"{key}: {val}\n" for key, val in self.__dict__.items() if not key.startswith("_") ])
 
     def _get_val(self, desc: dict, k: str): 
         default = desc.get("default") if "default" in desc.keys() else None
@@ -222,21 +231,25 @@ class V2xMsg:
 
     def encode(self):
         return self._spec.encode(self.name, self.as_dict()) 
+    
+    def _map_data_to_class(self, tmp):
+        for key, value in self._flat_dict.items():
+            nk, base, i = key.split(".")[1:], tmp, 0
+            while i < len(nk):
+                if not isinstance(base, dict): break
+                if nk[i] in self._choice.keys():
+                    base = base.get(nk[i], [None, None])[1]
+                    i += 1
+                else: 
+                    base = base.get(nk[i], value.get("default"))
+                i += 1
+            self.__dict__.update(**{nk[-1]: base})
 
     def _decode(self):
-
+        data = None
         match self._pkt:
-            case p_scapy(): pass
+            case p_scapy():
+                data = self._spec.decode(self.name, bytes(BTPb(bytes(GeoNetworking(self._pkt[Raw].load).payload)).payload))
             case p_pyshark():
-                tmp = self._spec.decode(self.name, bytes.fromhex(self._pkt.its_raw.value))
-                for key, value in self._flat_dict.items():
-                    nk, base, i = key.split(".")[1:], tmp, 0
-                    while i < len(nk):
-                        if not isinstance(base, dict): break
-                        if nk[i] in self._choice.keys():
-                            base = base.get(nk[i], [None, None])[1]
-                            i += 1
-                        else: 
-                            base = base.get(nk[i], value.get("default"))
-                        i += 1
-                    self.__dict__.update(**{nk[-1]: base})
+                data = self._spec.decode(self.name, bytes.fromhex(self._pkt.its_raw.value))
+        if data is not None: self._map_data_to_class(data)
