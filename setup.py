@@ -5,15 +5,14 @@ with open("README.md", "r") as fh:
 
 setup( 
 	name="pyv2x", 
-	version="1.0.0", 
+	version="1.2.0", 
 	author="Edoardo Torrini", 
 	author_email="edoardo.torrini@gmail.com", 
 	packages=[
 		"pyv2x",
 		"pyv2x.v2x_utils",
 		"pyv2x.v2x_network",
-		"pyv2x.v2x_cam",
-		"pyv2x.v2x_denm"
+	    "pyv2x.v2x_msg"	
 	], 
 	description="Python package to communicate using v2x", 
 	long_description=description, 

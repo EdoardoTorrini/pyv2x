@@ -6,8 +6,6 @@ from scapy.compat import raw
 from pyshark.packet import packet
 
 from pyv2x.v2x_utils import GeoNetworking, BTPb
-from pyv2x.v2x_cam import CAM
-from pyv2x.v2x_denm import DENM
 
 import os
 import time
@@ -15,9 +13,24 @@ import asn1tools
 from typeguard import typechecked
 
 
-class V2xTMsg:
-    ETSI_DENM   = 1
-    ETSI_CAM    = 2
+class IterMeta(type):
+
+    def __iter__(cls):
+        for k, v in cls.__dict__.items():
+            if not k.startswith('_') and not callable(v):
+                yield k, v
+
+    def __len__(cls):
+        return sum(1 for k in cls.__dict__.keys() 
+                   if not k.startswith('_') and not callable(cls.__dict__[k]))
+
+    def get(self, key, default=None):
+        return self.__dict__.get(key, default)
+
+# TODO: make this class dynamic using the parser
+class V2xTMsg(metaclass=IterMeta):
+    DENM = 1
+    CAM = 2
 
 required_geo = [ "gn_addr_address", "latitude", "longitude", "speed", "heading" ]
 
@@ -61,8 +74,11 @@ class ETSI(object):
         if not hasattr(pkt.its, "ItsPduHeader_element"):
             raise Exception("pkt has not ItsPduHeader or it is in wrong form - it must be raw")
 
-        msg_id = getattr(pkt.its.ItsPduHeader_element, "messageId", None)
-        return int(msg_id)
+        # it seems to be necessary to manage both LiveCapture and FileCapture of pyshark
+        msg_id = int(getattr(pkt.its.ItsPduHeader_element, "messageId", 0))
+        msg_id += int(getattr(pkt.its.ItsPduHeader_element, "messageID", 0)) 
+
+        return msg_id
 
     @classmethod
     def get_message_id(cls, pkt: packet.Packet | Packet | RadioTap) -> int:
@@ -71,28 +87,6 @@ class ETSI(object):
         if isinstance(pkt, Packet) or isinstance(pkt, RadioTap):
             return cls._get_message_id_scapy(pkt)
         return -1
-
-    @classmethod
-    def get_cam_payload(cls, pkt: Packet | packet.Packet | RadioTap, cam: asn1tools.compiler.Specification) -> dict:
-        
-        if isinstance(pkt, packet.Packet):
-            pkt = cls.new_cam(cam, **dict(CAM(flat=pkt)))
-
-        if cls.get_message_id(pkt) != V2xTMsg.ETSI_CAM:
-            raise Exception("this is not a CAM packet")
-        
-        return cam.decode('CAM', bytes(BTPb(bytes(GeoNetworking(pkt[Raw].load).payload)).payload))
-    
-    @classmethod
-    def get_denm_payload(cls, pkt: Packet | packet.Packet, denm: asn1tools.compiler.Specification) -> dict:
-
-        if isinstance(pkt, packet.Packet):
-            pkt = Ether( bytes( pkt.get_raw_packet() ) )
-
-        if cls.get_message_id(pkt) != V2xTMsg.ETSI_DENM:
-            raise Exception("this is not a DENM packet")
-        
-        return denm.decode('DENM', bytes(BTPb(bytes(GeoNetworking(pkt[Raw].load).payload)).payload))
 
     @classmethod
     def geo(cls, **kwargs) -> GeoNetworking:
