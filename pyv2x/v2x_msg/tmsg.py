@@ -13,6 +13,7 @@ class V2xMsg:
     _raw_data = None
     
     # TODO: make more specific the raise error
+    # TODO: in the case of two same leaf name, it could be a bad error, fix that (ex. DENM)
     def __init__(self, **kwargs):
 
         if "pkt" in kwargs.keys():

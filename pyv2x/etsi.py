@@ -31,7 +31,7 @@ class V2xTMsg(metaclass=IterMeta):
     DENM = 1
     CAM = 2
 
-required_geo = [ "gn_addr_address", "latitude", "longitude", "speed", "heading" ]
+required_geo = [ "gn_addr_address", "latitude", "longitude", "speed", "heading", "payload_lenght" ]
 
 @typechecked
 class ETSI(object):
@@ -106,7 +106,7 @@ class ETSI(object):
                 longitude=tmsg.longitude,
                 speed=tmsg.speedValue,
                 heading=tmsg.headingValue,
-                payload_length=len(btpb_raw+pkt_raw),
+                payload_lenght=len(btpb_raw+pkt_raw),
                 **kwargs
             ))
         except AttributeError: raise AttributeError()

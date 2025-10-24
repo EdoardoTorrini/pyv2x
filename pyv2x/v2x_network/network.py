@@ -1,5 +1,6 @@
 from scapy.packet import Packet as p_scapy
 from scapy.sendrecv import sendp, sniff
+from scapy.config import conf
 
 from pyshark.packet.packet import Packet as p_pyshark
 
@@ -38,6 +39,7 @@ class V2xNetwork:
 
         self._queue = Queue(maxsize=0)
         self._filter = filter
+        conf.verb = 0
         tshark = Thread(target=self.start_listener_v2x, daemon=True).start()
 
     def send_msg(self, packet: p_scapy) -> None:
