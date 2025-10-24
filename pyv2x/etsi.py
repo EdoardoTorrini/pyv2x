@@ -1,22 +1,37 @@
 from scapy.packet import Packet, Raw
-from scapy.layers.l2 import SNAP, LLC
+from scapy.layers.l2 import SNAP, LLC, Ether
 from scapy.layers.dot11 import Dot11, Dot11QoS, RadioTap
 from scapy.compat import raw
 
-from pyv2x.v2x_utils import GeoNetworking, BTPb
-from pyv2x.v2x_cam import CAM
-from pyv2x.v2x_denm import DENM
+from pyshark.packet import packet
 
-import os
-import time
-import asn1tools
+from pyv2x.v2x_utils import GeoNetworking, BTPb
+from pyv2x.v2x_msg import V2xMsg
+
+import os, time, asn1tools
 from typeguard import typechecked
 
 
-ETSI_DENM   = 1
-ETSI_CAM    = 2
+class IterMeta(type):
 
-required_geo = [ "gn_addr_address", "latitude", "longitude", "speed", "heading" ]
+    def __iter__(cls):
+        for k, v in cls.__dict__.items():
+            if not k.startswith('_') and not callable(v):
+                yield k, v
+
+    def __len__(cls):
+        return sum(1 for k in cls.__dict__.keys() 
+                   if not k.startswith('_') and not callable(cls.__dict__[k]))
+
+    def get(self, key, default=None):
+        return self.__dict__.get(key, default)
+
+# TODO: make this class dynamic using the parser
+class V2xTMsg(metaclass=IterMeta):
+    DENM = 1
+    CAM = 2
+
+required_geo = [ "gn_addr_address", "latitude", "longitude", "speed", "heading", "payload_lenght" ]
 
 @typechecked
 class ETSI(object):
@@ -30,10 +45,10 @@ class ETSI(object):
     header = asn1tools.compile_files(header_path, 'uper') 
 
     @classmethod
-    def get_message_id(cls, pkt: Packet) -> int:
+    def _get_message_id_scapy(cls, pkt: Packet | RadioTap) -> int:
 
         # SNAP and Raw are necessary to access to ETSI packages
-        if not pkt.haslayer(SNAP) and not pkt.haslayer(Raw) and not pkt.haslayer(SNAP): return -1
+        if not pkt.haslayer(SNAP) and not pkt.haslayer(Raw): return -1
         
         # if the SNAP code is not 0x8947 the packet not contain an GeoNetwork packet 
         if pkt[SNAP].code != 0x8947: return -1;
@@ -45,20 +60,32 @@ class ETSI(object):
         return cls.header.decode('ItsPduHeader', bytes(BTPb(bytes(geo.payload)).payload)).get("messageID")
 
     @classmethod
-    def get_cam_payload(cls, pkt: Packet, cam: asn1tools.compiler.Specification) -> dict:
+    def _get_message_id_pyshark(cls, pkt: packet.Packet) -> int:
 
-        if cls.get_message_id(pkt) != ETSI_CAM:
-            raise Exception("this is not a CAM packet")
-        
-        return cam.decode('CAM', bytes(BTPb(bytes(GeoNetworking(pkt[Raw].load).payload)).payload))
-    
+        if not hasattr(pkt, "gnw"): return -1
+        if not hasattr(pkt.gnw, "ch"): return -1
+
+        # from here is possible to make difference between the btpa or btpb
+        nh = getattr(pkt.gnw.ch, "nh", None)
+        if nh is None:
+            raise Exception("pkt has GeoNetwork layer, but next_header is not specified")
+
+        if not hasattr(pkt.its, "ItsPduHeader_element"):
+            raise Exception("pkt has not ItsPduHeader or it is in wrong form - it must be raw")
+
+        # it seems to be necessary to manage both LiveCapture and FileCapture of pyshark
+        msg_id = int(getattr(pkt.its.ItsPduHeader_element, "messageId", 0))
+        msg_id += int(getattr(pkt.its.ItsPduHeader_element, "messageID", 0)) 
+
+        return msg_id
+
     @classmethod
-    def get_denm_payload(cls, pkt: Packet, denm: asn1tools.compiler.Specification) -> dict:
-
-        if cls.get_message_id(pkt) != ETSI_DENM:
-            raise Exception("this is not a DENM packet")
-        
-        return denm.decode('DENM', bytes(BTPb(bytes(GeoNetworking(pkt[Raw].load).payload)).payload))
+    def get_message_id(cls, pkt: packet.Packet | Packet | RadioTap) -> int:
+        if isinstance(pkt, packet.Packet):
+            return cls._get_message_id_pyshark(pkt)
+        if isinstance(pkt, Packet) or isinstance(pkt, RadioTap):
+            return cls._get_message_id_scapy(pkt)
+        return -1
 
     @classmethod
     def geo(cls, **kwargs) -> GeoNetworking:
@@ -68,35 +95,21 @@ class ETSI(object):
 
         param = { key: kwargs[key] for key in required_geo }
         return GeoNetworking(**param, timestamp=GeoNetworking.get_gn_timestamp())
-
-    @classmethod
-    def new_cam(cls, cam: asn1tools.compiler.Specification, **kwargs) -> Packet:
-        
-        geo, btpb = cls.geo(**kwargs), BTPb(destination_port=2001, info=0x5400)
-
-        geo_raw, btpb_raw = raw(geo), raw(btpb)
-        cam_raw = raw(cam.encode("CAM", CAM(**kwargs).get_dict()))
-
-        dot11 = Dot11(subtype=8, type=2, proto=0, ID=0, addr1="ff:ff:ff:ff:ff:ff", addr2=kwargs.get("gn_addr_address"), addr3="ff:ff:ff:ff:ff:ff", SC=480)
-        qos = Dot11QoS(A_MSDU_Present=0, Ack_Policy=1, EOSP=0, TID=3, TXOP=0)
-
-        llc = LLC(dsap=0xaa, ssap=0xaa, ctrl=3)
-        snap = SNAP(OUI=0, code=0x8947)
-
-        mex = Raw(load=geo_raw+btpb_raw+cam_raw)
-        radio = RadioTap(present=0x400000, timestamp=int(time.perf_counter()), ts_accuracy=0, ts_position=0, ts_flags=None)
-
-        mex = radio / dot11 / qos / llc / snap / mex
-
-        return mex
     
     @classmethod
-    def new_denm(cls, denm: asn1tools.compiler.Specification, **kwargs) -> Packet:
+    def format_msg(cls, tmsg: V2xMsg, **kwargs) -> Packet:
 
-        geo, btpb = cls.geo(**kwargs), BTPb(destination_port=2001, info=0x5400)
-
-        geo_raw, btpb_raw = raw(geo), raw(btpb)
-        denm_raw = raw(denm.encode("DENM", DENM(**kwargs).get_dict()))
+        btpb_raw, pkt_raw = raw(BTPb(destination_port=2001, info=0x5400)), raw(tmsg.encode())
+        try:
+            geo_raw = raw(cls.geo(
+                latitude=tmsg.latitude,
+                longitude=tmsg.longitude,
+                speed=tmsg.speedValue,
+                heading=tmsg.headingValue,
+                payload_lenght=len(btpb_raw+pkt_raw),
+                **kwargs
+            ))
+        except AttributeError: raise AttributeError()
 
         dot11 = Dot11(subtype=8, type=2, proto=0, ID=0, addr1="ff:ff:ff:ff:ff:ff", addr2=kwargs.get("gn_addr_address"), addr3="ff:ff:ff:ff:ff:ff", SC=480)
         qos = Dot11QoS(A_MSDU_Present=0, Ack_Policy=1, EOSP=0, TID=3, TXOP=0)
@@ -104,9 +117,7 @@ class ETSI(object):
         llc = LLC(dsap=0xaa, ssap=0xaa, ctrl=3)
         snap = SNAP(OUI=0, code=0x8947)
 
-        mex = Raw(load=geo_raw+btpb_raw+denm_raw)
+        mex = Raw(load=geo_raw+btpb_raw+pkt_raw)
         radio = RadioTap(present=0x400000, timestamp=int(time.perf_counter()), ts_accuracy=0, ts_position=0, ts_flags=None)
 
-        mex = radio / dot11 / qos / llc / snap / mex
-
-        return mex
+        return radio / dot11 / qos / llc / snap / mex

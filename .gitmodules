@@ -1,0 +1,6 @@
+[submodule "asn/cam"]
+	path = asn/cam
+	url = https://forge.etsi.org/rep/ITS/asn1/cam_en302637_2.git
+[submodule "asn/denm"]
+	path = asn/denm
+	url = https://forge.etsi.org/rep/ITS/asn1/denm_en302637_3.git
