@@ -6,10 +6,9 @@ from scapy.compat import raw
 from pyshark.packet import packet
 
 from pyv2x.v2x_utils import GeoNetworking, BTPb
+from pyv2x.v2x_msg import V2xMsg
 
-import os
-import time
-import asn1tools
+import os, time, asn1tools
 from typeguard import typechecked
 
 
@@ -96,14 +95,21 @@ class ETSI(object):
 
         param = { key: kwargs[key] for key in required_geo }
         return GeoNetworking(**param, timestamp=GeoNetworking.get_gn_timestamp())
-
+    
     @classmethod
-    def format_msg(cls, parser: asn1tools.compiler.Specification, tmsg: type, **kwargs) -> Packet:
-        
-        geo, btpb = cls.geo(**kwargs), BTPb(destination_port=2001, info=0x5400)
+    def format_msg(cls, tmsg: V2xMsg, **kwargs) -> Packet:
 
-        geo_raw, btpb_raw = raw(geo), raw(btpb)
-        denm_raw = raw(parser.encode(tmsg.name, tmsg(**kwargs).get_dict()))
+        btpb_raw, pkt_raw = raw(BTPb(destination_port=2001, info=0x5400)), raw(tmsg.encode())
+        try:
+            geo_raw = raw(cls.geo(
+                latitude=tmsg.latitude,
+                longitude=tmsg.longitude,
+                speed=tmsg.speedValue,
+                heading=tmsg.headingValue,
+                payload_length=len(btpb_raw+pkt_raw),
+                **kwargs
+            ))
+        except AttributeError: raise AttributeError()
 
         dot11 = Dot11(subtype=8, type=2, proto=0, ID=0, addr1="ff:ff:ff:ff:ff:ff", addr2=kwargs.get("gn_addr_address"), addr3="ff:ff:ff:ff:ff:ff", SC=480)
         qos = Dot11QoS(A_MSDU_Present=0, Ack_Policy=1, EOSP=0, TID=3, TXOP=0)
@@ -111,9 +117,7 @@ class ETSI(object):
         llc = LLC(dsap=0xaa, ssap=0xaa, ctrl=3)
         snap = SNAP(OUI=0, code=0x8947)
 
-        mex = Raw(load=geo_raw+btpb_raw+denm_raw)
+        mex = Raw(load=geo_raw+btpb_raw+pkt_raw)
         radio = RadioTap(present=0x400000, timestamp=int(time.perf_counter()), ts_accuracy=0, ts_position=0, ts_flags=None)
 
-        mex = radio / dot11 / qos / llc / snap / mex
-
-        return mex
+        return radio / dot11 / qos / llc / snap / mex

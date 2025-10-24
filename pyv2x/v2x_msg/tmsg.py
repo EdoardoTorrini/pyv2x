@@ -4,6 +4,7 @@ from scapy.packet import Raw
 from pyshark.packet.packet import Packet as p_pyshark
 
 from typeguard import typechecked
+from flatdict import FlatDict
 
 
 @typechecked

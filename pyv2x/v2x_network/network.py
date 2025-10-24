@@ -25,7 +25,7 @@ import sys
 @typechecked
 class V2xNetwork:
 
-    def __init__(self, iface: str, ltmsg: List[Type[V2xMsg]]):
+    def __init__(self, iface: str, ltmsg: List[Type[V2xMsg]], filter: str = "its"):
         
         if len(V2xTMsg) < len(ltmsg):
             raise Exception(f"the size of V2xTMsg is {len(V2xTMsg)} and support this type of msg: {' '.join([ v for k, v in dict(V2xTMsg).items() ])}")
@@ -37,13 +37,14 @@ class V2xNetwork:
             self._ltmsg[ V2xTMsg.get(tmsg.name) ] = tmsg
 
         self._queue = Queue(maxsize=0)
+        self._filter = filter
         tshark = Thread(target=self.start_listener_v2x, daemon=True).start()
 
     def send_msg(self, packet: p_scapy) -> None:
         sendp(packet, iface=self._iface)
 
     def start_listener_v2x(self):
-        self._trace = pyshark.LiveCapture(interface=self._iface, use_json=True, include_raw=True)
+        self._trace = pyshark.LiveCapture(interface=self._iface, use_json=True, include_raw=True, display_filter=self._filter)
         for pkt in self._trace.sniff_continuously():
             try: 
                 nh = ETSI.get_message_id(pkt)
