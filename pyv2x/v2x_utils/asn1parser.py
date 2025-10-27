@@ -24,6 +24,8 @@ class V2xAsnP:
         self._tree = {}
         self._imports = []
         self._choice = {}
+        
+        self._optional = []
 
     @classmethod
     def new(cls, name: str, file: list | str) -> "V2xAsnP":
@@ -74,15 +76,25 @@ class V2xAsnP:
             structure = FlatDict(self._dspec.get(k), delimiter=".")
             for root in self._keys_datatype:
                 self._tree = {self._name: root}
+                
                 for key in structure.keys():
                     if key.split(".")[-1] != "members": continue
+
                     if structure.get(f"types.{key.split('.')[1]}.type") == "CHOICE":
                        self._choice[ self._tree.get(key.split(".")[1]).split(".")[-1] ] = [ value.get("name") for value in structure.get(f"types.{key.split('.')[1]}.members")[:-1] ] 
+                    
                     if key.split(".")[1] in self._tree.keys(): root = self._tree[key.split(".")[1]]
+                    
                     for member in structure.get(key):
                         try:
+                            if member.get("optional") == True: 
+                                
+                                self._optional.append(member.get('name')) #TODO non resiste se esistono due campi con lo stesso nome (imposti entrambi a optional anche se solo uno lo è)
+
                             if member.get("type") not in self._tree.keys():
                                 self._tree[member.get("type")] = root + "." + member.get("name")
+
+
                             if member.get("type") in self._imports: 
                                 _tree_[root + "." + member.get("name")] = member.get("type")
                             elif f"types.{member.get('type')}.members" not in structure.keys():
@@ -92,29 +104,31 @@ class V2xAsnP:
    
     # TODO: PathHistory::= SEQUENCE (SIZE(0..40)) OF PathPoint -> this type is managed wrong
     def _parser_datatype(self, trees: dict):
+        
         for root in self._keys_datatype:
             datatype = FlatDict(self._dspec.get(root), delimiter=".")
             for leaf, t in trees.items():
-                if t == "CurvatureCalculationMode":
-                    i = 0
+                opt = True if leaf.split('.')[-1] in self._optional else False
                 if t in self._ac_datatype:
-                    self._flat_dict[leaf] = { "type": t, "optional": True }
+                    self._flat_dict[leaf] = { "type": t, "optional": opt  }#todo qui
                 elif f"types.{t}.members" in datatype.keys():
-                    self.find_leaf_type(datatype, datatype.get(f"types.{t}.members"), leaf, t)
+                    self.find_leaf_type(datatype, datatype.get(f"types.{t}.members"), leaf, t, opt=opt)
                 elif f"types.{t}.type" in datatype.keys():
-                    self.find_leaf_type(datatype, {}, leaf, datatype.get(f"types.{t}.type"), t)
+                    self.find_leaf_type(datatype, {}, leaf, datatype.get(f"types.{t}.type"), t, opt=opt)
+        
 
     # TODO: remove hardcoded "optional": True
-    def find_leaf_type(self, all: FlatDict | dict, sub: dict | list, base_name: str, base_type: str, old_type: str = "") -> int:        
+    def find_leaf_type(self, all: FlatDict | dict, sub: dict | list, base_name: str, base_type: str, old_type: str = "", opt: bool = False) -> int:        
         try:
             if base_type in self._ac_datatype:
+                
                 match base_type:
                     case "ENUMERATED":
                         val = all.get(f"types.{old_type}.values")
                         self._flat_dict[base_name] = {
                             "type": base_type,
                             "value": val,
-                            "optional": True,
+                            "optional": opt,
                             "default": self._sort(val)[0][0]
                         }
                     case "BIT STRING":
@@ -123,36 +137,36 @@ class V2xAsnP:
                             "type": base_type,
                             "length": size,
                             "info": all.get(f"types.{old_type}.named-bits"),
-                            "optional": True,
+                            "optional": opt,
                             "default": (b"\x00", 8)
                         }
                     case "INTEGER":
                         self._flat_dict[base_name] = {
                             "type": base_type,
-                            "optional": True,
+                            "optional": opt,
                             "default": 0
                         }
                     case "OCTET STRING":
                         self._flat_dict[base_name] = {
                             "type": base_type,
-                            "optional": True,
+                            "optional": opt,
                             "default": b"\x00"
                         }
                     case _:
                         self._flat_dict[base_name] = {
                             "type": base_type,
-                            "optional": True
+                            "optional": opt
                         }
                 return 0
             if isinstance(sub, list):
                 for el in sub:
                     if el is None: return 0
-                    self.find_leaf_type(all, el, base_name + "." + el.get("name"), el.get("type"), base_type)
+                    self.find_leaf_type(all, el, base_name + "." + el.get("name"), el.get("type"), base_type, opt=opt)
             if isinstance(sub, dict):
                 if f"types.{base_type}.members" in all.keys():
-                    self.find_leaf_type(all, all.get(f"types.{base_type}.members"), base_name, base_type, base_type)
+                    self.find_leaf_type(all, all.get(f"types.{base_type}.members"), base_name, base_type, base_type, opt=opt)
                 elif f"types.{base_type}.type" in all.keys():
-                    self.find_leaf_type(all, {}, base_name, all.get(f"types.{base_type}.type"), base_type)
+                    self.find_leaf_type(all, {}, base_name, all.get(f"types.{base_type}.type"), base_type, opt=opt)
         except Exception as e: pass
         return 0
 
@@ -160,8 +174,9 @@ class V2xAsnP:
     def create_class(self):
         return type(self._name, (V2xMsg,), {
             "name": self._name,
-            "_required": [ key.split(".")[-1] for key in self._flat_dict if not self._flat_dict.get(key).get("optional") ],
+            "_required": [ key.split(".")[-1] for key in self._flat_dict if self._flat_dict.get(key).get("optional") == False ],
             "_spec": asn1tools.compile_dict(self._dspec, "uper"),
             "_flat_dict": self._flat_dict,
             "_choice": self._choice
         })
+
