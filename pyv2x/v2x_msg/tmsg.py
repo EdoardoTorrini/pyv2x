@@ -32,7 +32,8 @@ class V2xMsg:
             self.__dict__.update(**kwargs)
 
     def __iter__(self):
-        return iter({ key: val for key, val in self.__dict__.items() if not key.startswith("_") })
+        t = { key: val for key, val in self.__dict__.items() if not key.startswith("_") }
+        return iter(t.items())
 
     def __repr__(self):
         return "".join([ f"{key}: {val}\n" for key, val in self.__dict__.items() if not key.startswith("_") ])
