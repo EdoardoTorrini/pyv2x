@@ -43,6 +43,9 @@ class ETSI(object):
     )
 
     header = asn1tools.compile_files(header_path, 'uper') 
+    
+    # TODO: make a method to obtain the its timestamp
+    def get_its_timestamp(): pass
 
     @classmethod
     def _get_message_id_scapy(cls, pkt: Packet | RadioTap) -> int:
@@ -104,8 +107,8 @@ class ETSI(object):
             geo_raw = raw(cls.geo(
                 latitude=tmsg.latitude,
                 longitude=tmsg.longitude,
-                speed=tmsg.speedValue,
-                heading=tmsg.headingValue,
+                speed=getattr(tmsg, "speedValue", 0),
+                heading=getattr(tmsg, "headingValue", 0),
                 payload_lenght=len(btpb_raw+pkt_raw),
                 **kwargs
             ))

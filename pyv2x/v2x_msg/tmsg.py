@@ -13,7 +13,6 @@ class V2xMsg:
     _raw_data = None
     
     # TODO: make more specific the raise error
-    # TODO: in the case of two same leaf name, it could be a bad error, fix that (ex. DENM)
     def __init__(self, **kwargs):
 
         if "pkt" in kwargs.keys():
@@ -27,20 +26,30 @@ class V2xMsg:
         
         else:
             if not all(req in kwargs for req in self._required):
-                raise Exception(f"Missing parameter for CAM frame, need: {self._required}")
+                raise Exception(f"Missing parameter for {self.name} frame, need: {self._required}")
+            
+            t, tm = [ key.split(".")[-1] for key, val in self._flat_dict.items() ], {}
+            for el in t:
+                if el not in tm.keys(): tm[el] = 1
+                else: tm[el] += 1
 
+            t = [ k for k, v in tm.items() if v != 1 ]
+            for k, v in kwargs.items():
+                if k in t: raise Exception(f"{k} is ambiguos, specifies the path [ father_{k} ]")
+
+            
             self.__dict__.update(**kwargs)
 
     def __iter__(self):
-        t = { key: val for key, val in self.__dict__.items() if not key.startswith("_") }
+        t = { key if not key.find("_") > -1 else key.replace("_", "."): val  for key, val in self.__dict__.items() if not key.startswith("_") }
         return iter(t.items())
 
     def __repr__(self):
-        return "".join([ f"{key}: {val}\n" for key, val in self.__dict__.items() if not key.startswith("_") ])
+        return "".join([ f"{key}: {val}\n" for key, val in dict(self).items() if not key.startswith("_") ])
 
     def _get_val(self, desc: dict, k: str): 
         default = desc.get("default") if "default" in desc.keys() else None
-        val = self.__dict__.get(k, default)
+        val = dict(self).get(k, default)
         return val
 
     def as_dict(self):
@@ -53,15 +62,24 @@ class V2xMsg:
                 if key.find(k) > -1:
                     l = key.split(f".{k}.")
                     nkey = l[0] + "." + k
-                    if nkey not in tmp.keys(): tmp[ nkey ] = (val[0], {".".join( l[1].split(".")[1:] ): self._get_val(self._flat_dict.get(key), key.split(".")[-1])} )
-                    else: tmp[ nkey ][1][".".join( l[1].split(".")[1:] )] = self._get_val(self._flat_dict.get(key), key.split(".")[-1])
+                    if l[1].split(".")[-1] in self._required or l[1].split(".")[-1] in self.__dict__.keys():
+                        if nkey not in tmp.keys(): tmp[ nkey ] = (val[0], {".".join( l[1].split(".")[1:] ): self._get_val(self._flat_dict.get(key), key.split(".")[-1])} )
+                        else: tmp[ nkey ][1][".".join( l[1].split(".")[1:] )] = self._get_val(self._flat_dict.get(key), key.split(".")[-1])
 
         for key, value in tmp.items():
             choice_base[ key ] = (value[0], FlatDict(value[1], delimiter=".").as_dict())
 
         for key, value in self._flat_dict.items():
             if all([ not key.find(k) > -1 for k in self._choice.keys() ]) and key not in all_base.keys():
-                    all_base[key] = self._get_val(value, key.split(".")[-1])
+                
+                for k in dict(self):
+                    for kf, kc in zip(k.split(".")[::-1], key.split(".")[::-1]):
+                        if kf != kc: break
+                    else:
+                        kd = key.split(".")[-1] if len(k) == 1 else k
+                        all_base[key] = self._get_val(value, kd)
+
+                    if key in all_base.keys(): break
 
         all_base.update(choice_base)
 
@@ -81,7 +99,8 @@ class V2xMsg:
                 else: 
                     base = base.get(nk[i], value.get("default"))
                 i += 1
-            self.__dict__.update(**{nk[-1]: base})
+            if nk[-1] in self._required or base != self._get_val(value, ".".join(nk)):
+                self.__dict__.update(**{".".join(nk): base})
 
     def _decode(self):
         data = None

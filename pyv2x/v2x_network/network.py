@@ -19,14 +19,11 @@ import asn1tools
 import sys
 
 
-
 # TODO: change the logic behind the parsing of msg, pass only the its_raw.value into the Queue
-# remove the cparser e dparser, on top of that we can identify the message type
-
 @typechecked
 class V2xNetwork:
 
-    def __init__(self, iface: str, ltmsg: List[Type[V2xMsg]], filter: str = "its"):
+    def __init__(self, iface: str, ltmsg: List[Type[V2xMsg]], filter: str = "its", enable_listener: bool = True):
         
         if len(V2xTMsg) < len(ltmsg):
             raise Exception(f"the size of V2xTMsg is {len(V2xTMsg)} and support this type of msg: {' '.join([ v for k, v in dict(V2xTMsg).items() ])}")
@@ -40,7 +37,9 @@ class V2xNetwork:
         self._queue = Queue(maxsize=0)
         self._filter = filter
         conf.verb = 0
-        tshark = Thread(target=self.start_listener_v2x, daemon=True).start()
+
+        if enable_listener:
+            tshark = Thread(target=self.start_listener_v2x, daemon=True).start()
 
     def send_msg(self, packet: p_scapy) -> None:
         sendp(packet, iface=self._iface)

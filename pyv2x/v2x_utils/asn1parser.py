@@ -25,7 +25,7 @@ class V2xAsnP:
         self._imports = []
         self._choice = {}
         
-        self._optional = []
+        self._req = []
 
     @classmethod
     def new(cls, name: str, file: list | str) -> "V2xAsnP":
@@ -44,9 +44,25 @@ class V2xAsnP:
         btree = None
         if asn_parser._check_imports():
             btree = asn_parser._parser_structure()
-
+        
+        asn_parser._req = asn_parser._parse_optional()
         asn_parser._parser_datatype(btree)
         return asn_parser
+
+    def _parse_optional(self) -> list:
+         
+        tmp, opt = set([ el.split(".")[-1] for el in self._req ]), []
+        
+        for el in self._req:
+            status = True
+            for t in el.split(".")[1:]:
+                if t not in tmp:
+                    status = False
+                    break
+            if status:
+                opt.append(el)
+
+        return opt
     
     def _check_imports(self) -> bool:
         for key in self._keys:
@@ -76,25 +92,16 @@ class V2xAsnP:
             structure = FlatDict(self._dspec.get(k), delimiter=".")
             for root in self._keys_datatype:
                 self._tree = {self._name: root}
-                
                 for key in structure.keys():
                     if key.split(".")[-1] != "members": continue
-
                     if structure.get(f"types.{key.split('.')[1]}.type") == "CHOICE":
                        self._choice[ self._tree.get(key.split(".")[1]).split(".")[-1] ] = [ value.get("name") for value in structure.get(f"types.{key.split('.')[1]}.members")[:-1] ] 
-                    
                     if key.split(".")[1] in self._tree.keys(): root = self._tree[key.split(".")[1]]
-                    
                     for member in structure.get(key):
                         try:
-                            if member.get("optional") == True: 
-                                
-                                self._optional.append(member.get('name')) #TODO non resiste se esistono due campi con lo stesso nome (imposti entrambi a optional anche se solo uno lo è)
-
+                            if "optional" not in member.keys(): self._req.append(root + "." + member.get("name"))
                             if member.get("type") not in self._tree.keys():
                                 self._tree[member.get("type")] = root + "." + member.get("name")
-
-
                             if member.get("type") in self._imports: 
                                 _tree_[root + "." + member.get("name")] = member.get("type")
                             elif f"types.{member.get('type')}.members" not in structure.keys():
@@ -108,16 +115,14 @@ class V2xAsnP:
         for root in self._keys_datatype:
             datatype = FlatDict(self._dspec.get(root), delimiter=".")
             for leaf, t in trees.items():
-                opt = True if leaf.split('.')[-1] in self._optional else False
+                opt = False if leaf in self._req else True
                 if t in self._ac_datatype:
-                    self._flat_dict[leaf] = { "type": t, "optional": opt  }#todo qui
+                    self._flat_dict[leaf] = { "type": t, "optional": opt }
                 elif f"types.{t}.members" in datatype.keys():
                     self.find_leaf_type(datatype, datatype.get(f"types.{t}.members"), leaf, t, opt=opt)
                 elif f"types.{t}.type" in datatype.keys():
                     self.find_leaf_type(datatype, {}, leaf, datatype.get(f"types.{t}.type"), t, opt=opt)
         
-
-    # TODO: remove hardcoded "optional": True
     def find_leaf_type(self, all: FlatDict | dict, sub: dict | list, base_name: str, base_type: str, old_type: str = "", opt: bool = False) -> int:        
         try:
             if base_type in self._ac_datatype:
@@ -161,6 +166,7 @@ class V2xAsnP:
             if isinstance(sub, list):
                 for el in sub:
                     if el is None: return 0
+                    # TODO: add check -> if the father is required the son could be optional
                     self.find_leaf_type(all, el, base_name + "." + el.get("name"), el.get("type"), base_type, opt=opt)
             if isinstance(sub, dict):
                 if f"types.{base_type}.members" in all.keys():
