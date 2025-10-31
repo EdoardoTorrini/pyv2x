@@ -13,7 +13,7 @@ CAM =  V2xAsnP.new("CAM", cfiles).create_class()
 DENM = V2xAsnP.new("DENM", dfiles).create_class()
 
 iface = "hwsim0"
-net = V2xNetwork(iface, [CAM, DENM], ''', enable_listener=False''') 
+net = V2xNetwork(iface, [CAM, DENM], enable_listener=False) 
 
 msg = CAM(
     protocolVersion = 2,
@@ -89,3 +89,4 @@ for pkt in pyshark.FileCapture(input_file=pcap_path, use_json=True, include_raw=
         case V2xTMsg.CAM:
             msg = CAM(pkt=pkt)
             print(f"CAM msg: {msg}")
+            net.send_msg( ETSI.format_msg( msg, gn_addr_address="E3:B5:93:C7:D8:57" ) )

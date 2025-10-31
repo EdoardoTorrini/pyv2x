@@ -15,30 +15,34 @@ class V2xMsg:
     # TODO: make more specific the raise error
     def __init__(self, **kwargs):
 
+        self._find_leaf_duplicate()
         if "pkt" in kwargs.keys():
             try:
                 self._pkt = kwargs.get("pkt")
+                self._is_raw = True
                 if not isinstance(self._pkt, p_scapy) and not isinstance(self._pkt, p_pyshark):
                     raise Exception("generic error")
                 self._decode()
-                self._is_raw = True
             except: raise Exception("generic error")
         
         else:
             if not all(req in kwargs for req in self._required):
                 raise Exception(f"Missing parameter for {self.name} frame, need: {self._required}")
-            
-            t, tm = [ key.split(".")[-1] for key, val in self._flat_dict.items() ], {}
-            for el in t:
-                if el not in tm.keys(): tm[el] = 1
-                else: tm[el] += 1
-
-            t = [ k for k, v in tm.items() if v != 1 ]
+             
             for k, v in kwargs.items():
-                if k in t: raise Exception(f"{k} is ambiguos, specifies the path [ father_{k} ]")
+                if k in self._duplicate: raise Exception(f"{k} is ambiguos, specifies the path [ father_{k} ]")
 
-            
             self.__dict__.update(**kwargs)
+
+    def _find_leaf_duplicate(self):
+        t, tm = [ key.split(".")[-1] for key, val in self._flat_dict.items() ], {}
+        for el in t:
+            if el not in tm.keys(): tm[el] = 1
+            else: tm[el] += 1
+
+        t = [ k for k, v in tm.items() if v != 1 ]
+        self._duplicate = t
+
 
     def __iter__(self):
         t = { key if not key.find("_") > -1 else key.replace("_", "."): val  for key, val in self.__dict__.items() if not key.startswith("_") }
@@ -92,6 +96,8 @@ class V2xMsg:
         for key, value in self._flat_dict.items():
             nk, base, i = key.split(".")[1:], tmp, 0
             while i < len(nk):
+                if nk[-1] == "causeCode":
+                    k = 0
                 if not isinstance(base, dict): break
                 if nk[i] in self._choice.keys():
                     base = base.get(nk[i], [None, None])[1]
@@ -99,8 +105,9 @@ class V2xMsg:
                 else: 
                     base = base.get(nk[i], value.get("default"))
                 i += 1
-            if nk[-1] in self._required or base != self._get_val(value, ".".join(nk)):
-                self.__dict__.update(**{".".join(nk): base})
+            if nk[-1] in self._required or (base != self._get_val(value, ".".join(nk)) and not self._is_raw):
+                k = nk[-1] if nk[-1] not in self._duplicate else ".".join(nk)
+                self.__dict__.update(**{k: base})
 
     def _decode(self):
         data = None
