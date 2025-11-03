@@ -103,7 +103,8 @@ class V2xMsg:
                 else: 
                     base = base.get(nk[i], value.get("default"))
                 i += 1
-            if nk[-1] in self._required or (base != self._get_val(value, ".".join(nk)) and not self._is_raw):
+            # TODO: it's a piece of shit, need a refactor and change logic (it seems it works for our purpose)
+            if nk[-1] in self._required or base is not None and base != self._get_val(value, ".".join(nk)):
                 k = nk[-1] if nk[-1] not in self._duplicate else ".".join(nk)
                 self.__dict__.update(**{k: base})
 
