@@ -96,8 +96,6 @@ class V2xMsg:
         for key, value in self._flat_dict.items():
             nk, base, i = key.split(".")[1:], tmp, 0
             while i < len(nk):
-                if nk[-1] == "causeCode":
-                    k = 0
                 if not isinstance(base, dict): break
                 if nk[i] in self._choice.keys():
                     base = base.get(nk[i], [None, None])[1]
@@ -117,3 +115,5 @@ class V2xMsg:
             case p_pyshark():
                 data = self._spec.decode(self.name, bytes.fromhex(self._pkt.its_raw.value))
         if data is not None: self._map_data_to_class(data)
+
+    def get_id(self): return self._get_val(dict(self), "messageID")
