@@ -53,8 +53,8 @@ msg = DENM(
     stationID=12120,
     originatingStationID=12120,
     sequenceNumber=1,
-    detectionTime=100000000,
-    referenceTime=0,
+    detectionTime=GeoNetworking.get_timestamp(),
+    referenceTime=GeoNetworking.get_timestamp(),
     latitude=446558300,
     longitude=109275000,
     semiMajorConfidence=282,
@@ -85,6 +85,7 @@ for pkt in pyshark.FileCapture(input_file=pcap_path, use_json=True, include_raw=
         case V2xTMsg.DENM: 
             msg = DENM(pkt=pkt)
             print(f"DENM msg: {msg}")
+            net.send_msg( ETSI.format_msg( msg, gn_addr_address="E3:B5:93:C7:D8:57" ) )
 
         case V2xTMsg.CAM:
             msg = CAM(pkt=pkt)

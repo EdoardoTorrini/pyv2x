@@ -62,3 +62,12 @@ class GeoNetworking(Packet):
                 datetime(2004, 1, 1, tzinfo=timezone.utc)
             ).total_seconds() * 1000
         ) & 0xFFFFFFFF
+
+    @classmethod
+    def get_timestamp(cls):
+        return int(
+            (
+                datetime.now(timezone.utc) - 
+                datetime(2004, 1, 1, tzinfo=timezone.utc)
+            ).total_seconds() * 1000
+        )
