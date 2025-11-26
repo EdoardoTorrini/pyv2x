@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setup( 
 	name="pyv2x", 
-	version="1.2.3", 
+	version="1.2.4", 
 	author="Edoardo Torrini", 
 	author_email="edoardo.torrini@gmail.com", 
 	packages=[
