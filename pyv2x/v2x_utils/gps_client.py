@@ -151,6 +151,9 @@ class GPSclient:
                                     azimuth_4=msg.azimuth_4,                # Gradi (°)
                                     snr_4=msg.snr_4                         # dBHz
                                 )
+                            
+                            case _:
+                                return None
 
                     except pynmea2.ParseError:
                         return None
